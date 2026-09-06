@@ -33,7 +33,8 @@ async function aiCommand(sockOrCtx, chatIdParam, msgParam, argsParam) {
             '╭━━━〔 *MICKEY AI* 〕━━━┈⊷\n' +
             '┃\n' +
             '┃ 📝 *Usage:* `.ai [swali lako]`\n' +
-            '┃ 💡 *Example:* `.ai mambo vipi?`\n' +
+            '┃ � *Alt:* `.boresha [swali lako]`\n' +
+            '┃ �💡 *Example:* `.ai mambo vipi?`\n' +
             '┃\n' +
             '╰━━━━━━━━━━━━━━━━━━━━┈⊷';
         
@@ -141,7 +142,7 @@ async function aiCommand(sockOrCtx, chatIdParam, msgParam, argsParam) {
 // ─── EXPORTS (COMMONJS & HANDLER COMPATIBLE) ───────────────────────────
 module.exports = {
     name: 'ai',
-    aliases: ['gpt', 'chatgpt', 'bot', 'mickey'],
+    aliases: ['gpt', 'chatgpt', 'bot', 'mickey', 'boresha', 'boresha'],
     category: 'ai',
     desc: 'Mickey AI Assistant',
     
