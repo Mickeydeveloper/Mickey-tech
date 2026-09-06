@@ -74,8 +74,7 @@ function collect(sock) {
         net: getNetwork(),
         runtime: isBun ? `Bun ${Bun.version}` : `Node ${process.version}`,
         engine: isBun ? 'JavaScriptCore' : `V8 ${process.versions.v8}`,
-        botUpSec: Math.floor(process.uptime()),
-        sysUpSec: Math.floor(os.uptime()),
+        timezone: 'Africa/Dar_es_Salaam',
         at: Date.now(),
     };
 }
@@ -86,8 +85,7 @@ function buildPayload(d) {
         cpu: d.cpu,
         ram: d.ram,
         disk: d.disk,
-        botUpSec: d.botUpSec,
-        sysUpSec: d.sysUpSec,
+        timezone: d.timezone,
         at: d.at,
     }).replace(/</g, '\\u003c');
 
@@ -128,7 +126,7 @@ body{background:linear-gradient(165deg,#0a1526,#060c18 60%,#04080f);padding:8px;
 </style>
 <div id="app">
 <div class="hdr"><img src="${BANNER}" onerror="this.remove()"><div><h1>📡 SERVER LIVE</h1><div class="st"><i></i>REALTIME MONITOR · <b id="spd">${d.speed || 0} ms</b></div></div></div>
-<div class="up"><small>⏱️ BOT UPTIME — BERJALAN REALTIME</small><b id="up">-</b><span id="sys">-</span></div>
+    <div class="up"><small>🕒 MUDA WA SASA — REALTIME</small><b id="clock">-</b><span id="date">-</span></div>
 <div class="gauge"><div class="gl"><b>CPU LOAD</b><span id="cv">-</span></div><div class="bar" id="cb"><i style="width:0%"></i></div></div>
 <div class="gauge"><div class="gl"><b>RAM</b><span id="rv">-</span></div><div class="bar" id="rb"><i style="width:0%"></i></div></div>
 <div class="gauge"><div class="gl"><b>DISK</b><span id="dv">-</span></div><div class="bar" id="db"><i style="width:0%"></i></div></div>
@@ -155,10 +153,12 @@ function paint(cpu,ram,disk){
  $('cb').className='bar'+(cpu>85?' r':'');$('rb').className='bar'+(ram>85?' r':'');$('db').className='bar'+(disk>90?' r':'');
 }
 function tick(){
-var el=Math.floor((Date.now()-D.at)/1000);
- $('up').textContent=fmt(D.botUpSec+el);
- $('sys').textContent='system: '+fmt(D.sysUpSec+el);
- $('age').textContent='diperbarui '+el+' dtk lalu';
+var now=new Date();
+var time=new Intl.DateTimeFormat('sw-TZ',{timeZone:D.timezone,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(now);
+var date=new Intl.DateTimeFormat('sw-TZ',{timeZone:D.timezone,day:'2-digit',month:'2-digit',year:'numeric'}).format(now);
+ $('clock').textContent=time;
+ $('date').textContent=date+' · '+D.timezone;
+ $('age').textContent='imepimwa '+Math.floor((Date.now()-D.at)/1000)+' dtk zilizopita';
 }
 function breathe(){
 var n=function(v,amp,lo,hi){
