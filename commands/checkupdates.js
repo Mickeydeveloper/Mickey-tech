@@ -2,6 +2,26 @@ const updateCommand = require('./update');
 const isOwnerOrSudo = require('../lib/isOwner');
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
+const axios = require('axios');
+const { Button } = require('../lib/messageBuilder');
+
+const REPO_OWNER = 'Mickeydeveloper';
+const REPO_NAME = 'Mickey-Glitch';
+const IGNORED_NAMES = new Set([
+    '.git',
+    'node_modules',
+    'session',
+    'auth_info_baileys',
+    'temp_update',
+    'settings.js',
+    'config.js',
+    '.env'
+]);
+
+function isIgnoredPath(filePath) {
+    return filePath.split('/').some(part => IGNORED_NAMES.has(part));
+}
 
 // Auto-reminder config
 const REMINDER_FILE = path.join(__dirname, '../data/updateReminder.json');
@@ -53,6 +73,60 @@ function categorizeChanges(files) {
     return categories;
 }
 
+async function collectLocalFiles(rootDir, currentDir = rootDir, files = new Map()) {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        if (IGNORED_NAMES.has(entry.name)) continue;
+
+        const fullPath = path.join(currentDir, entry.name);
+        const relativePath = path.relative(rootDir, fullPath).split(path.sep).join('/');
+
+        if (entry.isDirectory()) {
+            await collectLocalFiles(rootDir, fullPath, files);
+            continue;
+        }
+
+        if (entry.isFile()) files.set(relativePath, fullPath);
+    }
+
+    return files;
+}
+
+function gitBlobSha(buffer) {
+    const header = Buffer.from(`blob ${buffer.length}\0`);
+    return crypto.createHash('sha1').update(Buffer.concat([header, buffer])).digest('hex');
+}
+
+async function getLocalChanges(latestSha) {
+    const api = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`;
+    const headers = { 'User-Agent': 'MickeyBot', Accept: 'application/vnd.github+json' };
+    const treeResponse = await axios.get(`${api}/git/trees/${latestSha}?recursive=1`, { headers });
+    const remoteFiles = new Map(
+        (treeResponse.data.tree || [])
+            .filter(item => item.type === 'blob' && !isIgnoredPath(item.path))
+            .map(item => [item.path, item.sha])
+    );
+    const localFiles = await collectLocalFiles(process.cwd());
+    const changed = [];
+
+    for (const [file, fullPath] of localFiles) {
+        if (!remoteFiles.has(file)) {
+            changed.push({ file, status: 'removed from GitHub' });
+            continue;
+        }
+
+        const localSha = gitBlobSha(await fs.readFile(fullPath));
+        if (localSha !== remoteFiles.get(file)) changed.push({ file, status: 'modified' });
+    }
+
+    for (const file of remoteFiles.keys()) {
+        if (!localFiles.has(file)) changed.push({ file, status: 'added' });
+    }
+
+    return changed.sort((a, b) => a.file.localeCompare(b.file));
+}
+
 // Create detailed update info message
 function formatUpdateInfo(res) {
     let message = '🔄 *UPDATE CHECK RESULT*\n\n';
@@ -87,6 +161,17 @@ function formatUpdateInfo(res) {
             if (categories.other.length > 0) {
                 message += `  • Other: ${categories.other.length}\n`;
             }
+
+            if (Array.isArray(res.changes) && res.changes.length > 0) {
+                const fileLines = res.changes.slice(0, 25)
+                    .map(change => `  • ${change.file} (${change.status})`)
+                    .join('\n');
+                message += `\n📄 *Files zilizobadilika:*\n${fileLines}`;
+                if (res.changes.length > 25) {
+                    message += `\n  • ... na files nyingine ${res.changes.length - 25}`;
+                }
+            }
+
             message += `\n💡 *Use .update to install now*`;
 
             return message;
@@ -134,12 +219,8 @@ function formatUpdateInfo(res) {
 async function checkForUpdates() {
     try {
         // Option 1: Check via GitHub API
-        const axios = require('axios');
-        const repoOwner = 'Mickeydeveloper';
-        const repoName = 'Mickey-Glitch';
-        
         // Get latest commit from GitHub
-        const response = await axios.get(`https://api.github.com/repos/${repoOwner}/${repoName}/commits`, {
+        const response = await axios.get(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits`, {
             headers: { 'User-Agent': 'MickeyBot' },
             params: { per_page: 1 }
         });
@@ -148,34 +229,17 @@ async function checkForUpdates() {
             const latestCommit = response.data[0];
             const latestSha = latestCommit.sha;
             
-            // Check current version (you can store this in a file)
-            let currentSha = null;
-            try {
-                const versionFile = path.join(__dirname, '../data/currentVersion.json');
-                const versionData = await fs.readFile(versionFile, 'utf8');
-                currentSha = JSON.parse(versionData).sha;
-            } catch (e) {
-                // First time checking
-                currentSha = null;
-            }
-            
-            const isUpdateAvailable = currentSha && latestSha !== currentSha;
-            
-            // Get changed files
-            let changedFiles = [];
-            if (isUpdateAvailable && currentSha) {
-                const compareResponse = await axios.get(`https://api.github.com/repos/${repoOwner}/${repoName}/compare/${currentSha}...${latestSha}`, {
-                    headers: { 'User-Agent': 'MickeyBot' }
-                });
-                changedFiles = compareResponse.data.files.map(f => f.filename);
-            }
+            const changes = await getLocalChanges(latestSha);
+            const changedFiles = changes.map(change => change.file);
+            const isUpdateAvailable = changes.length > 0;
             
             return {
                 available: isUpdateAvailable,
                 mode: 'git',
                 files: changedFiles.join('\n'),
+                changes,
                 version: latestSha,
-                currentVersion: currentSha
+                currentVersion: null
             };
         }
         
@@ -202,6 +266,23 @@ async function saveCurrentVersion(sha) {
     } catch (err) {
         console.error('Failed to save version:', err);
     }
+}
+
+async function sendUpdateResult(sock, chatId, message, result, quoted) {
+    if (!result?.available) {
+        await sock.sendMessage(chatId, { text: message }, { quoted });
+        return;
+    }
+
+    const updateButton = new Button(sock)
+        .setBody(message)
+        .setFooter('MICKEYGLITCH UPDATE')
+        .addReply('⬇️ .update', '.update');
+
+    await updateButton.send(chatId, {
+        quoted,
+        fallbackText: message
+    });
 }
 
 async function checkUpdatesCommand(sock, chatId, message, args = []) {
@@ -242,7 +323,7 @@ async function checkUpdatesCommand(sock, chatId, message, args = []) {
 
         // Format and send update info
         const updateMsg = formatUpdateInfo(res);
-        await sock.sendMessage(chatId, { text: updateMsg }, { quoted: message });
+        await sendUpdateResult(sock, chatId, updateMsg, res, message);
 
         // Auto-reminder logic
         if (res && res.available) {
