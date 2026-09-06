@@ -266,6 +266,36 @@ const getGreeting = (hour) => {
     return { text: 'Usiku', emoji: '🌙' };
 };
 
+const buildCommandList = (builder, menuData) => {
+    builder.addSelection('📂 Command Categories');
+
+    menuData.forEach((category) => {
+        const items = (Array.isArray(category.items) ? category.items : [])
+            .map((item) => ({
+                ...item,
+                command: String(item?.cmd || '').trim()
+            }))
+            .filter((item) => item.command);
+        if (!items.length) return;
+
+        builder.makeSection(
+            `${category.icon} ${category.title}`,
+            `${items.length} commands`
+        );
+
+        items.forEach((item) => {
+            builder.makeRow(
+                '',
+                item.command,
+                String(item.desc || 'Mickey Glitch command').trim(),
+                item.command
+            );
+        });
+    });
+
+    return builder;
+};
+
 // ==============================================
 // 🚀 MAIN MENU COMMAND
 // ==============================================
@@ -298,19 +328,15 @@ const menuCommand = async (sock, chatId, m, userDb = null) => {
             .setImage(imageUrl)
             .setTitle('🔥 MICKEY GLITCH MENU')
             .setBody(menuText)
-            .setFooter(`⚡ MICKEY BOT | ${date}`)
-            .addSelection('📂 Command Categories');
+            .setFooter(`⚡ MICKEY BOT | ${date}`);
 
-        // Kuweka Categories zote ndani ya list moja
-        menuData.forEach((category) => {
-            singleMenu.makeSection(`${category.icon} ${category.title}`, `${category.items.length} commands`);
-            category.items.forEach((item) => {
-                singleMenu.makeRow('', item.cmd, item.desc || 'Mickey Glitch command', item.cmd);
-            });
-        });
+        buildCommandList(singleMenu, menuData);
 
         // Tuma kama ujumbe MMOJA TU bila kupishanisha
-        await singleMenu.send(chatId, { quoted: m });
+        await singleMenu.send(chatId, {
+            quoted: m,
+            fallbackText: menuText
+        });
 
     } catch (e) {
         console.error('Menu Error:', e);
