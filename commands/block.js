@@ -3,14 +3,29 @@
 const JOIN_URL = 'https://chat.whatsapp.com/IbQcd51ItVU8ABnvGMXA8q?s=cl&p=a&ilr=0';
 const COMMUNITY_IMAGE = 'https://litter.catbox.moe/cenuvu.jpg';
 
+function resolveBloksWidget(proto) {
+    const candidates = [
+        proto?.Message?.InteractiveMessage?.BloksWidget,
+        proto?.Message?.BloksWidget,
+        proto?.BloksWidget,
+    ];
+
+    return candidates.find(type => typeof type?.create === 'function');
+}
+
 async function blockCommand(sock, chatId, message) {
     try {
         const { proto } = await import('@whiskeysockets/baileys/WAProto/index.js');
         const crypto = await import('crypto');
         const interactiveMessage = proto.Message.InteractiveMessage;
+        const bloksWidgetType = resolveBloksWidget(proto);
 
-        if (!interactiveMessage?.BloksWidget) {
-            throw new Error('BloksWidget belum tersedia di WAProto');
+        if (!bloksWidgetType) {
+            await sock.sendMessage(chatId, {
+                text: '⚠️ BloksWidget haipo kwenye WAProto ya Baileys iliyosakinishwa.\n\n' +
+                    'Tafadhali tumia Baileys build yenye BloksWidget schema; kwa sasa nimeacha command isi-crash.',
+            }, { quoted: message });
+            return;
         }
 
         const uuid = crypto.randomUUID();
@@ -49,7 +64,7 @@ async function blockCommand(sock, chatId, message) {
             },
         };
 
-        const widget = interactiveMessage.BloksWidget.create({
+        const widget = bloksWidgetType.create({
             uuid,
             type: 'im_a2ui',
             data: JSON.stringify(widgetData),
